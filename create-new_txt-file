@@ -1,0 +1,34 @@
+tell application "Finder"
+	set baseName to "NewFile"
+	set fileExtension to ".txt"
+	set fileName to baseName & fileExtension
+	
+	if (count of windows) > 0 then
+		try
+			set currentFolder to (target of front Finder window) as alias
+		on error
+			set currentFolder to desktop as alias
+		end try
+	else
+		set currentFolder to desktop as alias
+	end if
+	
+	-- Проверка на существование файла и генерация уникального имени
+	set fileExists to true
+	set counter to 0
+	repeat while fileExists
+		try
+			if counter is 0 then
+				set testName to fileName
+			else
+				set testName to baseName & "_" & counter & fileExtension
+			end if
+			set testFile to file testName of currentFolder
+			set counter to counter + 1
+		on error
+			set fileExists to false
+		end try
+	end repeat
+	
+	make new file at currentFolder with properties {name:testName}
+end tell
