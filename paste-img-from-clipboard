@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# 1) Определяем, в какую папку перейдём (текущая открытая папка Finder).
+DIR=$(osascript -e 'tell application "Finder" to get POSIX path of (target of front Finder window as alias)')
+cd "$DIR" || exit 1
+
+# 2) Сначала пытаемся вытащить растровую картинку из буфера (pngpaste).
+timestamp=$(date +%s)
+filename="clipboard_${timestamp}.png"
+/opt/homebrew/bin/pngpaste "$filename" 2>/dev/null
+
+# Проверяем, создался ли файл и не пустой ли он.
+# Дополнительно можно проверить, что это действительно PNG через команду file.
+if [[ -s "$filename" ]]; then
+    if file "$filename" | grep -q "PNG image data"; then
+        echo "Из буфера успешно сохранён PNG-файл: $filename"
+        exit 0
+    else
+        echo "Файл $filename не распознан как PNG. Удаляем и пробуем HTML-ссылку..."
+        rm -f "$filename"
+    fi
+fi
+
+# 3) Если обычное изображение не вытащилось, ищем HTML-ссылку <img src="...">
+img_url=$(
+/usr/bin/osascript -l JavaScript << 'JXA_EOF'
+ObjC.import('AppKit');
+var pb = $.NSPasteboard.generalPasteboard;
+
+// Достаём public.html как строку
+var data = pb.dataForType("public.html");
+if (!data) {
+    ""; // Нет HTML вообще
+} else {
+    var html = ObjC.unwrap(
+        $.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)
+    ) || "";
+    // Простая регулярка для поиска <img ... src="...">
+    var match = html.match(/<img\b[^>]*\bsrc\s*=\s*"([^"]+)"/);
+    if (match) {
+        match[1]; // Вернём саму ссылку
+    } else {
+        "";
+    }
+}
+JXA_EOF
+)
+
+if [[ -n "$img_url" ]]; then
+    filename="clipboard_${timestamp}.png"
+    echo "Найдена ссылка в буфере: $img_url"
+    echo "Скачиваю в файл: $filename"
+    curl -Ls "$img_url" -o "$filename"
+    if [[ $? -eq 0 ]]; then
+        echo "Успешно скачано: $filename"
+    else
+        echo "Ошибка при скачивании."
+        rm -f "$filename"
+    fi
+else
+    echo "Не удалось извлечь ни обычное растровое изображение, ни ссылку из HTML."
+fi
